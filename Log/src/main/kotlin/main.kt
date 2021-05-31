@@ -5,7 +5,6 @@ import java.util.*
 import kotlin.Exception
 
 fun main(args: Array<String>) {
-    val logWriter = FileWriter("log",true)
     val jedis = Jedis("localhost",6379,500)
     try{
         jedis.connect()
@@ -17,7 +16,8 @@ fun main(args: Array<String>) {
         override fun onMessage(channel: String?, message: String?) {
             if(channel!! == "log"){
                 println(message!!)
-                logWriter.write(message!!)
+                val logWriter = FileWriter("log",true)
+                logWriter.write(message)
                 logWriter.close()
             }
         }
