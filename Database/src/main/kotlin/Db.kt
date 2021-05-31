@@ -1,9 +1,13 @@
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.hibernate.SessionFactory
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import org.hibernate.boot.MetadataSources
 import redis.clients.jedis.Jedis
+import redis.clients.jedis.JedisPool
 import java.io.FileWriter
 
 import java.util.*
@@ -16,7 +20,7 @@ object Db {
         setUp()
     }
     var sessionFactory: SessionFactory? = null
-    var jedis: Jedis? = null
+    var jedisPool: JedisPool? = null
     private fun setUp() {
         // A SessionFactory is set up once for an application!
         val registry = StandardServiceRegistryBuilder()
@@ -29,7 +33,10 @@ object Db {
             // so destroy it manually.
             StandardServiceRegistryBuilder.destroy(registry)
             println(e.stackTraceToString())
-            jedis!!.publish("log",e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log", e.stackTraceToString())
+            }
         }
     }
     fun register(executor: Executor){
@@ -42,7 +49,10 @@ object Db {
         catch (e: Exception){
             session.transaction.rollback()
             println("${Date()}: insert executor error")
-            jedis!!.publish("log","${Date()}: "+e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log", "${Date()}: " + e.stackTraceToString())
+            }
         }
         session.close()
     }
@@ -63,7 +73,10 @@ object Db {
         catch (e: Exception){
             session.transaction.rollback()
             println("${Date()}: no user was found or no permissions")
-            jedis!!.publish("log","${Date()}: "+e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log","${Date()}: "+e.stackTraceToString())
+            }
         }
         session.close()
         return false
@@ -78,7 +91,10 @@ object Db {
         catch (e: Exception){
             session.transaction.rollback()
             println("${Date()}: error: insert employee")
-            jedis!!.publish("log","${Date()}: "+e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log","${Date()}: "+e.stackTraceToString())
+            }
         }
         session.close()
     }
@@ -94,7 +110,10 @@ object Db {
         }
         catch (e : Exception){
             println("${Date()}: no employee was found")
-            jedis!!.publish("log","${Date()}: "+e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log", e.stackTraceToString())
+            }
         }
         session.close()
         return null
@@ -113,7 +132,10 @@ object Db {
         catch (e : Exception){
             session.transaction.rollback()
             println("${Date()}: passes was not found")
-            jedis!!.publish("log","${Date()}: "+e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log", e.stackTraceToString())
+            }
         }
         session.close()
         return emptyList()
@@ -131,7 +153,10 @@ object Db {
         catch (e : Exception){
             session.transaction.rollback()
             println("${Date()}: error: insert pass")
-            jedis!!.publish("log","${Date()}: "+e.stackTraceToString())
+            jedisPool!!.resource.use {
+                it.connect()
+                it.publish("log", e.stackTraceToString())
+            }
         }
         session.close()
     }
