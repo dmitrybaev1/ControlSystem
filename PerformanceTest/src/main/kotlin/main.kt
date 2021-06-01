@@ -1,69 +1,73 @@
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import org.eclipse.paho.client.mqttv3.*
-import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 
 fun main(args: Array<String>) {
-    val mqttClients = arrayOfNulls<MqttAsyncClient>(1000)
-    for(i in mqttClients.indices) {
-        val deviceId: String = "device$i"
-        mqttClients[i] = MqttAsyncClient("tcp://localhost:1883", "ACSTest$i", MemoryPersistence())
-        val mqttClient = mqttClients[i]!!
-        try {
-            mqttClient.setCallback(object : MqttCallback{
-                override fun connectionLost(cause: Throwable?) {
+    val coroutineScope = CoroutineScope(Dispatchers.IO)
+    val mqttClient = MqttClient("tcp://localhost:1883","ACSClient")
+    mqttClient.connect()
+    val channelSend = Channel<MqttElement>()
+    val channelsReceive = arrayOfNulls<Channel<String>>(1000)
+    for(i in channelsReceive.indices)
+        channelsReceive[i] = Channel()
+    repeat(1000){
+        coroutineScope.launch {
+            channelSend.send(MqttElement("checker/client$it/checkCredentials","user,user"))
+            while(true) {
+                val textResponse = channelsReceive[it]!!.receive()
+                println(textResponse)
+            }
+        }
+    }
 
-                }
-                override fun messageArrived(topic: String?, message: MqttMessage?) {
-                    when(topic!!){
-                        "checker/$deviceId/status" -> {
-                            println("DeviceId:$deviceId Try to auth...")
-                            if(message.toString()=="ok") {
-                                println("DeviceId:$deviceId Auth Result:ok, start messaging...")
-                                val message = MqttMessage("802B490A6F4C04".toByteArray())
-                                message.qos = 2
-                                mqttClient.publish("checker/$deviceId/findEmployee",message)
+    coroutineScope.launch {
+        while(true){
+            val mqttElement = channelSend.receive()
+            val mqttMessage = MqttMessage(mqttElement.message.toByteArray())
+            mqttMessage.qos = 0
+            mqttClient.publish(mqttElement.topic,mqttMessage)
+        }
+    }
+    coroutineScope.launch {
+        mqttClient.setCallback(object : MqttCallback{
+            override fun connectionLost(cause: Throwable?) {
+
+            }
+
+            override fun messageArrived(topic: String?, message: MqttMessage?) {
+                when{
+                    topic!!.contains(Regex.fromLiteral("status")) -> {
+                        val deviceId = topic.split('/')[1]
+                        if(message.toString()=="ok")
+                            coroutineScope.launch {
+                                channelSend.send(MqttElement("checker/$deviceId/findEmployee", "802B490A6F4C04"))
+                                channelsReceive[getIndexFromDeviceId(deviceId)]!!.send("$deviceId authorized")
                             }
-                            else
-                                println("DeviceId:$deviceId Auth Result:fail, stopping...")
-                        }
-                        "checker/$deviceId/employeeInfo" -> {
-                            println("DeviceId:$deviceId Requesting for Employee Info...")
+                    }
+                    topic.contains(Regex.fromLiteral("employeeInfo")) -> {
+                        val deviceId = topic.split('/')[1]
+                        coroutineScope.launch {
                             val s = message.toString().split(',')
-                            println("DeviceId:$deviceId Name of Employee:"+s[1])
-                            val message = MqttMessage((s[0]+",true").toByteArray())
-                            message.qos = 2
-                            mqttClient.publish("checker/$deviceId/writePass",message)
+                            channelSend.send(MqttElement("checker/$deviceId/writePass", s[0]+",true"))
+                            channelsReceive[getIndexFromDeviceId(deviceId)]!!.send("$deviceId: received employee Name by cardId: "+s[1])
                         }
-                        "checker/$deviceId/writePass" -> {
-                            println("DeviceId:$deviceId Pass has been written")
+                    }
+                    topic.contains(Regex.fromLiteral("writePass")) -> {
+                        val deviceId = topic.split('/')[1]
+                        coroutineScope.launch {
+                            channelsReceive[getIndexFromDeviceId(deviceId)]!!.send("$deviceId: Pass has been written")
                         }
                     }
                 }
-                override fun deliveryComplete(token: IMqttDeliveryToken?) {
+            }
 
-                }
-            })
-            mqttClient.connect(null,object : IMqttActionListener{
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    mqttClient.subscribe("checker/#",2,null, object : IMqttActionListener{
-                        override fun onSuccess(asyncActionToken: IMqttToken?) {
-                            val message = MqttMessage("user,user".toByteArray())
-                            message.qos = 2
-                            mqttClient.publish("checker/$deviceId/checkCredentials", message)
-                        }
+            override fun deliveryComplete(token: IMqttDeliveryToken?) {
 
-                        override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-
-                        }
-                    })
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-
-                }
-            })
-
-        } catch (e: MqttException) {
-            println(e.stackTraceToString())
-        }
+            }
+        })
+        mqttClient.subscribe("checker/#")
     }
 }
+private fun getIndexFromDeviceId(deviceId: String): Int = deviceId.filter { it.isDigit() }.toInt()

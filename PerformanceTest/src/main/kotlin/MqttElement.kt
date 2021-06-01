@@ -1,0 +1,1 @@
+data class MqttElement (val topic: String, val message: String)

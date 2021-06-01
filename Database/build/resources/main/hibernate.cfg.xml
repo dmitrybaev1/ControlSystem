@@ -11,7 +11,7 @@
         <property name="hibernate.connection.username">psqluser</property>
         <property name="hibernate.connection.password">postgres</property>
         <property name="hbm2ddl.auto">create</property>
-        <!--<property name="hibernate.connection.pool_size">1</property>-->
+        <property name="hibernate.connection.pool_size">100</property>
 
         <property name="dialect">org.hibernate.dialect.PostgreSQL10Dialect</property>
 
